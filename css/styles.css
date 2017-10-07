@@ -1,0 +1,20 @@
+body{
+    margin: 0;
+}
+form{
+    width: 400px;
+    border: 1px solid #ccc;
+    background: #a2a2a2;
+}
+form .row{
+    margin-bottom: 10px;
+
+}
+form .row input[type="submit"]{
+    background: #0e76a2;
+    color: #fff;
+}
+.wrapper{
+    width: 600px;
+    margin: 0 auto;
+}
