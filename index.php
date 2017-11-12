@@ -18,9 +18,10 @@
         <div class="row"><input type="submit" value="Отправить"></div>
     </form>
     <?php
-        if($_POST){
 
-        }
+
+
+
     ?>
 </div>
 </body>
