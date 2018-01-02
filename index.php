@@ -1,7 +1,5 @@
 <?php
 header('Content-Type: text/html; charset=utf-8', true);
-    require __DIR__ . DIRECTORY_SEPARATOR . "sources" .DIRECTORY_SEPARATOR ."settings.php";
-    if($_POST) require __DIR__ . "sources".DS. "classes".DS."__autoload.php";
 ?><!doctype html>
 <html lang="ru">
 <head>
