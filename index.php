@@ -19,7 +19,9 @@ header('Content-Type: text/html; charset=utf-8', true);
  */
 function dimensioning( $arrCoordinate=array() ){
 
-    if( ! $arrCoordinate) return;
+    // учитываем корректные данные
+    if( ! isset($arrCoordinate[7]) || ! $arrCoordinate ) return;
+
 
     global $width,$height,$offsetX,$offsetY;
 
@@ -47,21 +49,22 @@ $arrStructure=array();
 if ($handle) {
     // получение всех элементов в слое
     while (($buffer = fgets($handle, 4096)) !== false) {
-        //
-        if( trim($buffer) == "ENTITIES" ){
+        $buffer = trim($buffer);
+        if( $buffer == "ENTITIES" ){
             $flag = true;
-        }elseif ( $flag == true && trim($buffer) !== "" ){
-            if( preg_match('#[A-Z]{3,}#i', $buffer) ){
+        }elseif ( $flag == true && $buffer !== "" ){
+            if( preg_match('#[A-Z]{4,}#i', $buffer) || $buffer == "ARC" ){
+
                 if(isset($figure) && $figure["VALUES"])
                     $arrStructure[] = $figure;
-                $figure = array("NAME"=>trim($buffer), "VALUES"=>array());
 
-            }elseif($buffer && isset($figure)){
-                $figure["VALUES"][] = trim($buffer);
+                $figure = array("NAME"=>$buffer, "VALUES"=>array());
+
+            }elseif( isset($figure) && $figure ){
+                $figure["VALUES"][] = $buffer;
             }
         }
     }
-
     // структура фигур
     $figures=array();
     // ширина полотна картинки
@@ -82,17 +85,26 @@ if ($handle) {
         switch($arrStructure[$i]["NAME"]){
             // собираем вершины у полилинии
             case "POLYLINE":
-                $figures[$figureCnt]=array("NAME"=>$arrStructure[$i]["NAME"], "POINTS"=>array());
+                $figures[$figureCnt]=array(
+                        "NAME"=>$arrStructure[$i]["NAME"],
+                        "POINTS"=>array(),
+                        "CLOSED" => isset($arrStructure[$i]["VALUES"][13]) ? 1 : 0
+                );
 
                 for($a=$i+1;;$a++){
 
-                    if(!isset($arrStructure[$a]["NAME"]) || $arrStructure[$a]["NAME"] != "VERTEX")
-                        break;
+                    if( ! isset($arrStructure[$a]["NAME"]) ||
+                        $arrStructure[$a]["NAME"] != "VERTEX" ||
+                        ! isset($arrStructure[$a]["VALUES"][7])
+                    ) break;
+
                     // считаем полотно
                     dimensioning($arrStructure[$a]["VALUES"]);
 
                     $figures[$figureCnt]["POINTS"][] = array("X"=>$arrStructure[$a]["VALUES"][5],
-                                                             "Y"=>$arrStructure[$a]["VALUES"][7]);
+                                                             "Y"=>$arrStructure[$a]["VALUES"][7],
+
+                                                            );
                 }
                 $i=$a;
                 $figureCnt++;
@@ -137,116 +149,130 @@ if ($handle) {
                 break;
         }
     }
-    // визуальные отступы для полотна
-    $paddingX = $width*0.05;
-    $paddingY = $height*0.05;
-    // добавляем отступы к полотну
-    $offsetX += $paddingX;
-    $offsetY += $paddingY;
-    // создаем изображение, на котором будем рисовать
-    $img = imagecreatetruecolor($width+$offsetX+$paddingX, $height+$offsetY+$paddingY);
-    // создаем цвета
-    $red   = imagecolorallocate($img, 255, 0, 0);
-    $white = imagecolorallocate($img, 255, 255, 255);
-    $blue = imagecolorallocate($img, 0, 0, 255);
+    if( $figures && $width ){
 
-    // длина контуров
-    $lengthContour = 0;
+        // визуальные отступы для полотна
+        $paddingX = $width*0.05;
+        $paddingY = $height*0.05;
+        // добавляем отступы к полотну
+        $offsetX += $paddingX;
+        $offsetY += $paddingY;
+        // создаем изображение, на котором будем рисовать
+        $img = imagecreatetruecolor($width+$offsetX+$paddingX, $height+$offsetY+$paddingY);
+        // создаем цвета
+        $red   = imagecolorallocate($img, 255, 0, 0);
+        $white = imagecolorallocate($img, 255, 255, 255);
+        $yellow = imagecolorallocate($img, 255, 255, 0);
 
-    // цвет заливки фона
-    $rgb = 0x000000;
+        // длина контуров
+        $lengthContour = 0;
 
-    // заливаем холст цветом $rgb
-    imagefill($img, 0, 0, $rgb);
+        // цвет заливки фона
+        $rgb = 0x000000;
 
-    foreach ( $figures as $figure ){
-        // кейсы по типу фигуры
-        switch($figure["NAME"]){
+        // заливаем холст цветом $rgb
+        imagefill($img, 0, 0, $rgb);
 
-            case "LINE":
+        foreach ( $figures as $figure ){
+            // кейсы по типу фигуры
+            switch($figure["NAME"]){
 
-                $x1 = $figure["POINTS"][0]["X"] + $offsetX;
-                $y1 = $figure["POINTS"][0]["Y"] + $offsetY;
-                $x2 = $figure["POINTS"][1]["X"] + $offsetX;
-                $y2 = $figure["POINTS"][1]["Y"] + $offsetY;
+                case "LINE":
 
-                imageline ($img, $x1, $y1, $x2, $y2, $blue);
-                // сумма кватратов разности начальной и конечной точек
-                $sum =  pow($x2 -  $x1, 2 )+ pow($y2 - $y1,2);
-                // длина линии по координатам sqrt($sum)
-                $lengthContour += sqrt($sum);
+                    $x1 = $figure["POINTS"][0]["X"] + $offsetX;
+                    $y1 = $figure["POINTS"][0]["Y"] + $offsetY;
+                    $x2 = $figure["POINTS"][1]["X"] + $offsetX;
+                    $y2 = $figure["POINTS"][1]["Y"] + $offsetY;
 
-                break;
-
-            case "POLYLINE":
-
-                $length = count($figure["POINTS"]);
-
-                for( $i = 0; $i < $length; $i++ ){
-                    // координаты линии
-                    if(isset($figure["POINTS"][$i+1]["Y"])){
-                        $x1 = $figure["POINTS"][$i]["X"] + $offsetX;
-                        $y1 = $figure["POINTS"][$i]["Y"] + $offsetY;
-                        $x2 = $figure["POINTS"][$i+1]["X"] + $offsetX;
-                        $y2 = $figure["POINTS"][$i+1]["Y"] + $offsetY;
-                    // замыкаем
-                    }else{
-                        $x1 = $figure["POINTS"][$i]["X"] + $offsetX;
-                        $y1 = $figure["POINTS"][$i]["Y"] + $offsetY;
-                        $x2 = $figure["POINTS"][0]["X"] + $offsetX;
-                        $y2 = $figure["POINTS"][0]["Y"] + $offsetY;
-                    }
+                    imageline ($img, $x1, $y1, $x2, $y2, $yellow);
                     // сумма кватратов разности начальной и конечной точек
                     $sum =  pow($x2 -  $x1, 2 )+ pow($y2 - $y1,2);
                     // длина линии по координатам sqrt($sum)
                     $lengthContour += sqrt($sum);
-                    // добавление линии
-                    imageline ($img, $x1, $y1, $x2, $y2, $white);
-                }
 
-                break;
+                    break;
 
-            case "CIRCLE":
-                imagearc(   $img,
+                case "POLYLINE":
+
+                    $length = count($figure["POINTS"]);
+
+                    for( $i = 0; $i < $length; $i++ ){
+                        $x1 = 0;
+                        $y1 = 0;
+                        $x2 = 0;
+                        $y2 = 0;
+                        // координаты линии
+                        if(isset($figure["POINTS"][$i+1]["Y"])){
+                            $x1 = $figure["POINTS"][$i]["X"] + $offsetX;
+                            $y1 = $figure["POINTS"][$i]["Y"] + $offsetY;
+                            $x2 = $figure["POINTS"][$i+1]["X"] + $offsetX;
+                            $y2 = $figure["POINTS"][$i+1]["Y"] + $offsetY;
+
+                        // замыкаем
+                        }elseif($figure["CLOSED"]){
+                            $x1 = $figure["POINTS"][$i]["X"] + $offsetX;
+                            $y1 = $figure["POINTS"][$i]["Y"] + $offsetY;
+                            $x2 = $figure["POINTS"][0]["X"] + $offsetX;
+                            $y2 = $figure["POINTS"][0]["Y"] + $offsetY;
+                        }
+                        // сумма кватратов разности начальной и конечной точек
+                        $sum =  pow($x2 -  $x1, 2 )+ pow($y2 - $y1,2);
+                        // длина линии по координатам sqrt($sum)
+                        $lengthContour += sqrt($sum);
+                        // добавление линии
+                        imageline ($img, $x1, $y1, $x2, $y2, $white);
+                    }
+
+                    break;
+
+                case "CIRCLE":
+                    imagearc(   $img,
                         $figure["POINTS"][0]["X"] + $offsetX,
                         $figure["POINTS"][0]["Y"] + $offsetY,
                         $figure["RADIUS"]*2,
                         $figure["RADIUS"]*2,
                         0, 360, $red);
-                // длина окружности
-                $lengthContour += 2*pi()*$figure["RADIUS"];
-                break;
+                    // длина окружности
+                    $lengthContour += 2*pi()*$figure["RADIUS"];
+                    break;
 
-            case "ARC":
-                imagearc(   $img,
+                case "ARC":
+                    imagearc(   $img,
                         $figure["POINTS"][0]["X"] + $offsetX,
                         $figure["POINTS"][0]["Y"] + $offsetY,
                         $figure["RADIUS"]*2, $figure["RADIUS"]*2,
                         $figure["START_ANGLE"], $figure["END_ANGLE"], $red);
-                // длина дуги
-                $angle = abs($figure["END_ANGLE"]-$figure["START_ANGLE"]);
-                $radians = pi()*$figure["RADIUS"]/180;
-                $lengthContour += $radians*$angle*pi();
+                    // длина дуги
+                    $angle = abs($figure["END_ANGLE"]-$figure["START_ANGLE"]);
+                    $radians = pi()*$figure["RADIUS"]/180;
+                    $lengthContour += $radians*$angle*pi();
 
-                break;
+                    break;
+            }
         }
+
+        echo "Длина контуров фигур : ".sprintf("%01.2f", $lengthContour)."<br>";
+
+        echo "Количество фигур : ".count($figures)."<br><br>";
+
+        ob_start ();
+        // зеркальное отражение
+        imageflip($img, IMG_FLIP_VERTICAL);
+        // рендерим в поток картинку
+        imagejpeg ($img);
+        $image_data = ob_get_contents ();
+        ob_end_clean ();
+        imagedestroy($img);
+        $image_data_base64 = base64_encode ($image_data);
+
+        echo "<img width='100%' src='data:image/png;base64,$image_data_base64'>";
+
+    }else{
+
+       echo "<p>Некорректный формат файла</p>";
+
     }
 
-    echo "Длина контуров фигур : ".sprintf("%01.2f", $lengthContour)."<br>";
-
-    echo "Количество фигур : ".count($figures)."<br><br>";
-
-    ob_start ();
-    // зеркальное отражение
-    imageflip($img, IMG_FLIP_VERTICAL);
-    // рендерим в поток картинку
-    imagejpeg ($img);
-    $image_data = ob_get_contents ();
-    ob_end_clean ();
-    imagedestroy($img);
-    $image_data_base64 = base64_encode ($image_data);
-
-    echo "<img width='100%' src='data:image/png;base64,$image_data_base64'>";
 }
 ?>
 </body>
